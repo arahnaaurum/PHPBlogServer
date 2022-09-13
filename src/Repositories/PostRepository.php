@@ -38,6 +38,22 @@ class PostRepository implements PostRepositoryInterface
         );
     }
 
+    public function delete(int $id): void
+    {
+        $statement = $this->connection->prepare(
+            "delete from post where id = :postId"
+        );
+
+        $statement->execute([
+            ':postId' => $id
+        ]);
+
+        if(!$statement)
+        {
+            throw new PostNotFoundException("Post with id:$id not found");
+        }
+    }
+
     /**
      * @throws PostNotFoundException
      * @throws \Exception
@@ -49,7 +65,7 @@ class PostRepository implements PostRepositoryInterface
         );
 
         $statement->execute([
-            'postId' => $id
+            ':postId' => $id
         ]);
 
         $postObj = $statement->fetch(PDO::FETCH_OBJ);
@@ -59,6 +75,30 @@ class PostRepository implements PostRepositoryInterface
             throw new PostNotFoundException("Post with id:$id not found");
         }
 
+        return $this->mapPost($postObj);    
+    }
+
+    public function getByTitle(string $title): Post
+    {
+        $statement = $this->connection->prepare(
+            "select * from post where title = :title"
+        );
+        $statement->execute([
+            ':title' => $title
+        ]);
+
+        $postObj = $statement->fetch(PDO::FETCH_OBJ);
+
+        if(!$postObj)
+        {
+            throw new PostNotFoundException("Post with title:$title not found");
+        }
+
+        return $this->mapPost($postObj);    
+    }
+
+    private function mapPost(object $postObj)
+    {
         $post = new Post($postObj->title, $postObj->text);
 
         $post
@@ -69,6 +109,5 @@ class PostRepository implements PostRepositoryInterface
             ->setDeletedAt(($deletedAt = $postObj->deleted_at) ? new DateTime($deletedAt) : null);
 
         return $post;
-
     }
 }

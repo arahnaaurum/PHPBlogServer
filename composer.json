@@ -3,7 +3,8 @@
     "type": "project",
     "autoload": {
         "psr-4": {
-            "App\\": "src/"
+            "App\\": "src/",
+            "Test\\": "test/"
         },
         "files": [
             "database/config/config.php"
@@ -11,12 +12,19 @@
     },
     "authors": [
         {
-            "name": "Георгий",
-            "email": "root@gosha.ru"
+            "name": "Daria",
+            "email": "d.e.romanova@mail.ru"
         }
     ],
     "require": {
+        "ext-pdo": "*",
+        "ext-mbstring": "*"
+    },
+    "require-dev": {
         "fakerphp/faker": "^1.20",
-         "ext-pdo": "*"
+        "phpunit/phpunit": "^9.0"
+    },
+    "scripts": {
+        "test": "phpunit tests --testdox --colors"
     }
 }
