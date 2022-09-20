@@ -1,34 +1,56 @@
 <?php
 
+use Psr\Container\ContainerInterface;
+use App\Blog\Http\Actions\ActionInterface;
+use App\Connection\ConnectorInterface;
+use App\Connection\SqLiteConnector;
+use App\Container\DIContainer;
 use App\Repositories\UserRepository;
+use App\Repositories\UserRepositoryInterface;
 use App\Repositories\PostRepository;
+use App\Repositories\PostRepositoryInterface;
 use App\Repositories\CommentRepository;
+use App\Repositories\CommentRepositoryInterface;
+use App\Repositories\PostLikeRepository;
+use App\Repositories\PostLikeRepositoryInterface;
+use App\Repositories\CommentLikeRepository;
+use App\Repositories\CommentLikeRepositoryInterface;
 
 use App\Blog\Http\Request;
 use App\Exceptions\HttpException;
 use App\Blog\Http\ErrorResponse;
 
+//это те же хэндеры (handlers)
 use App\Blog\Http\Actions\FindByEmail;
 use App\Blog\Http\Actions\FindPostById;
 use App\Blog\Http\Actions\CreatePost;
 use App\Blog\Http\Actions\DeletePost;
 use App\Blog\Http\Actions\CreateComment;
+use App\Blog\Http\Actions\AddLikeToPost;
+use App\Blog\Http\Actions\AddLikeToComment;
 
-require_once __DIR__ . '/autoload_runtime.php';
+use App\Blog\Http\Auth\UserIdIdentification;
 
-$userRepository = new UserRepository();
+$container = require_once __DIR__ . '/autoload_runtime.php';
 
-$postRepository = new PostRepository();
+//0. Подключаем логирование
+$logger = $container->get(\Psr\Log\LoggerInterface::class);
 
-$commentRepository = new CommentRepository();
+$userRepository = $container->get(UserRepositoryInterface::class);
+$postRepository = $container->get(PostRepositoryInterface::class);
+$postLikeRepository = $container->get(PostLikeRepositoryInterface::class);
+$commentRepository = $container->get(CommentRepositoryInterface::class);
+$commentLikeRepository = $container->get(CommentLikeRepositoryInterface::class);
 
 // file_get_contents('php://input') - поток, содержащий тело запроса
 $request = new Request($_GET, $_SERVER, file_get_contents('php://input'));
 
+
 // 1. Получить рут из запроса
 try {
     $path = $request->path();
-} catch (HttpException) {
+} catch (HttpException $e) {
+    $logger->warning($e->getMessage());
     (new ErrorResponse)->send();
     return;
 }
@@ -36,20 +58,26 @@ try {
 // 2. Получить HTTP-метод запроса
 try {
     $method = $request->method();
-} catch (HttpException) {
+} catch (HttpException $e) {
+    $logger->warning($e->getMessage());
     (new ErrorResponse)->send();
     return;
 }
 
+//3.Подключаем идентификацию юзеров
+$identification = new UserIdIdentification($userRepository);
+
 $routes = [
     // отделяем маршруты для запросов с разными методами
     'GET'=> [
-        '/users/show' => new FindByEmail($userRepository),
+        '/users/show' => new FindByEmail($userRepository, $logger),
         '/posts/show' => new FindPostById($postRepository),
     ],
     'POST'=> [
-        '/posts/create' => new CreatePost($postRepository, $userRepository),
+        '/posts/create' => new CreatePost($postRepository, $identification, $logger),
         '/posts/comment' => new CreateComment($commentRepository, $postRepository, $userRepository),
+        '/posts/like' => new AddLikeToPost($postLikeRepository, $postRepository, $userRepository),
+        '/comments/like' => new AddLikeToComment($commentLikeRepository, $commentRepository, $userRepository),
     ],
     'DELETE'=> [
         '/posts/delete' => new DeletePost($postRepository),
@@ -58,14 +86,12 @@ $routes = [
 ];
 
 // Если у нас нет маршрутов для метода запроса - возвращаем неуспешный ответ
-if (!array_key_exists($method, $routes)) {
-    (new ErrorResponse('Not found'))->send();
-    return;
-}
-
-// Проверяем, есть ли маршрут среди маршрутов для этого метода
-if (!array_key_exists($path, $routes[$method])) {
-    (new ErrorResponse('Not found'))->send();
+if (!array_key_exists($method, $routes)
+    || !array_key_exists($path, $routes[$method])) {
+// Логируем сообщение с уровнем NOTICE
+    $message = "Route not found: $method $path";
+    $logger->notice($message);
+    (new ErrorResponse($message))->send();
     return;
 }
 
@@ -75,6 +101,7 @@ $action = $routes[$method][$path];
 try {
     $response = $action->handle($request);
 } catch (Exception $e) {
+    $logger->error($e->getMessage(), ['exception' => $e]);
     (new ErrorResponse($e->getMessage()))->send();
 }
 
